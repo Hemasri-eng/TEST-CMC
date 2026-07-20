@@ -1,0 +1,105 @@
+let
+ 
+    Token = "C869OUgvkJ5on8fSlYX7qerEKGkVxw0HA80ge",
+ 
+
+Body =
+ 
+        Json.FromValue(
+ 
+            [
+ 
+                sheetIds = {2708701472313220},
+ 
+                since = "2026-07-17T00:00:00Z"
+ 
+            ]
+ 
+        ),
+ 
+ 
+    Source =
+ 
+        Json.Document(
+ 
+            Web.Contents(
+ 
+                "https://api.smartsheet.com",
+ 
+                [
+ 
+                    RelativePath = "2.0/filteredEvents",
+ 
+                    Headers = [
+ 
+                        Authorization = "Bearer " & Token,
+ 
+                        Accept = "application/json",
+ 
+                        #"Content-Type" = "application/json"
+ 
+                    ],
+ 
+                    Content = Body
+ 
+                ]
+ 
+            )
+ 
+        ),
+    data = Source[data],
+    #"Converted to Table" = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    #"Expanded Column1" = Table.ExpandRecordColumn(#"Converted to Table", "Column1", {"eventId", "objectType", "action", "objectId", "objectIdStr", "eventTimestamp", "userId", "requestUserId", "source"}, {"Column1.eventId", "Column1.objectType", "Column1.action", "Column1.objectId", "Column1.objectIdStr", "Column1.eventTimestamp", "Column1.userId", "Column1.requestUserId", "Column1.source"}),
+    #"Filtered Rows" = Table.SelectRows(#"Expanded Column1", each ([Column1.action] = "UPDATE")),
+    #"Sorted Rows" = Table.Sort(#"Filtered Rows",{{"Column1.eventTimestamp", Order.Descending}}),
+    #"Kept First Rows" = Table.FirstN(#"Sorted Rows",1),
+    // Get the first row's userId
+ 
+UserId = #"Kept First Rows"{0}[Column1.userId],
+ 
+ 
+// Call Users API
+ 
+UserDetails =
+ 
+    Json.Document(
+ 
+        Web.Contents(
+ 
+            "https://api.smartsheet.com",
+ 
+            [
+ 
+                RelativePath = "2.0/users/" & Text.From(UserId),
+ 
+                Headers = [
+ 
+                    Authorization = "Bearer " & Token,
+ 
+                    Accept = "application/json"
+ 
+                ]
+ 
+            ]
+ 
+        )
+ 
+    ),
+    Result = Table.AddColumn(
+ 
+    #"Kept First Rows",
+ 
+    "UserDetails",
+ 
+    each [
+ 
+        Username = UserDetails[firstName] & " " & UserDetails[lastName],
+ 
+        EmailID = UserDetails[email]
+ 
+    ]
+ 
+),
+ 
+Result2 = Table.AddColumn( Result, "Last Modified", each [Column1.eventTimestamp] ),
+    #"Expanded UserDetails" = Table.ExpandRecordColumn(Result2, "UserDetails", {"Username", "EmailID"}, {"UserDetails.Username", "UserDetails.EmailID"}) in #"Expanded UserDetails"
